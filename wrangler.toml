@@ -1,0 +1,29 @@
+name = "roof-claim-decoder"
+main = "worker/index.js"
+compatibility_date = "2026-01-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "roof-claim-decoder"
+database_id = "469869a2-d011-46d3-808e-879bdc0aa038"
+
+[[r2_buckets]]
+binding = "CLAIM_BUCKET"
+bucket_name = "roof-claim-decoder-fallback"
+
+# Hourly cleanup of expired fallback PDFs (backstop is the R2 lifecycle rule).
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+# Public site key is safe to expose; wire it into public/index.html if/when
+# you turn on Turnstile.
+TURNSTILE_SITE_KEY = "REPLACE_WITH_YOUR_SITE_KEY"
+
+# Secrets (do NOT put these here) — set with:
+#   npx wrangler secret put TURNSTILE_SECRET_KEY
+#   npx wrangler secret put STAFF_KEY
