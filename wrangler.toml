@@ -1,4 +1,4 @@
-name = "roof-quote-decoder"
+name = "roof-claim-decoder"
 main = "worker/index.js"
 compatibility_date = "2026-01-01"
 
@@ -24,6 +24,19 @@ crons = ["0 * * * *"]
 # you turn on Turnstile.
 TURNSTILE_SITE_KEY = "REPLACE_WITH_YOUR_SITE_KEY"
 
-# Secrets (do NOT put these here) — set with:
-#   npx wrangler secret put TURNSTILE_SECRET_KEY
-#   npx wrangler secret put STAFF_KEY
+# Secrets (do NOT put these here) — set via Cloudflare dashboard:
+#   Workers & Pages > roof-quote-decoder > Settings > Variables and Secrets
+#     TURNSTILE_SECRET_KEY   (Secret)
+#     STAFF_KEY              (Secret)
+#     RESEND_API_KEY         (Secret)  — from resend.com, enables lead-notification emails
+#
+# Deliberately left OUT of this file (set as dashboard Variables instead, not
+# Secrets — they're not sensitive, just easy to change without a code push):
+#     ADMIN_EMAIL  — who gets notified of each new lead. This is the "control"
+#                    switch: change this in the dashboard any time, no redeploy.
+#     NOTIFY_FROM  — optional; defaults to onboarding@resend.dev if unset.
+#
+# If a var name appears in [vars] below, Cloudflare Workers Builds will
+# enforce that value on every deploy and overwrite anything set in the
+# dashboard for that name — which is why ADMIN_EMAIL/NOTIFY_FROM stay out of
+# this file entirely.

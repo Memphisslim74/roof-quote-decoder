@@ -45,6 +45,65 @@ async function verifyTurnstile(token, secret, ip) {
   return !!outcome.success;
 }
 
+// Sends a new-lead notification email via Resend (https://resend.com).
+// Controlled entirely by dashboard config, not code:
+//   - env.ADMIN_EMAIL      -> who receives the notification (swap anytime, no redeploy needed if set as a var)
+//   - env.NOTIFY_FROM      -> the "from" address (defaults to Resend's shared test sender)
+//   - env.RESEND_API_KEY   -> secret; if unset, notifications are silently skipped (lead is still saved)
+// A failure here NEVER blocks lead capture — it's best-effort on top of the D1 write.
+async function sendLeadNotification(env, { lead, fields, confidence, needsReview, scanned, leadId }) {
+  if (!env.RESEND_API_KEY || !env.ADMIN_EMAIL) return { skipped: true };
+
+  const money = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
+  const statusLine = scanned
+    ? 'Scanned PDF — needs manual review'
+    : needsReview
+      ? `Needs review (confidence ${Math.round((confidence ?? 0) * 100)}%)`
+      : `Auto-read OK (confidence ${Math.round((confidence ?? 0) * 100)}%)`;
+
+  const html = `
+    <h2 style="margin:0 0 12px">New Claim Decoder lead</h2>
+    <p style="margin:0 0 16px;color:#444">${statusLine}</p>
+    <table cellpadding="6" style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
+      <tr><td><strong>Name</strong></td><td>${lead.firstName} ${lead.lastName}</td></tr>
+      <tr><td><strong>Phone</strong></td><td>${lead.phone}</td></tr>
+      <tr><td><strong>Email</strong></td><td>${lead.email}</td></tr>
+      <tr><td><strong>Address</strong></td><td>${lead.address}</td></tr>
+      <tr><td><strong>Carrier</strong></td><td>${fields?.carrier ?? '—'}</td></tr>
+      <tr><td><strong>Claim #</strong></td><td>${fields?.claimNumber ?? '—'}</td></tr>
+      <tr><td><strong>RCV</strong></td><td>${money(fields?.rcv)}</td></tr>
+      <tr><td><strong>ACV</strong></td><td>${money(fields?.acv)}</td></tr>
+      <tr><td><strong>Deductible</strong></td><td>${money(fields?.deductible)}</td></tr>
+      <tr><td><strong>Net claim</strong></td><td>${money(fields?.netClaim)}</td></tr>
+    </table>
+    <p style="margin-top:16px;color:#888;font-size:12px">Lead ID: ${leadId}</p>
+  `;
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: env.NOTIFY_FROM || 'Roof Claim Decoder <onboarding@resend.dev>',
+        to: [env.ADMIN_EMAIL],
+        subject: `New claim lead: ${lead.firstName} ${lead.lastName}`,
+        html,
+      }),
+    });
+    if (!res.ok) {
+      console.error('Resend notification failed:', res.status, await res.text());
+      return { skipped: false, ok: false };
+    }
+    return { skipped: false, ok: true };
+  } catch (err) {
+    console.error('Resend notification error:', err);
+    return { skipped: false, ok: false };
+  }
+}
+
 async function handleLead(request, env) {
   let payload;
   try {
@@ -85,7 +144,10 @@ async function handleLead(request, env) {
     confidence ?? null, needsReview ? 1 : 0, scanned ? 1 : 0, ip
   ).run();
 
-  return json({ ok: true, leadId: id });
+  // Best-effort — never lets an email hiccup fail the lead capture itself.
+  const notify = await sendLeadNotification(env, { lead, fields, confidence, needsReview, scanned, leadId: id });
+
+  return json({ ok: true, leadId: id, notified: notify.ok ?? false });
 }
 
 // Only reached for scanned/unreadable PDFs the browser couldn't parse.
