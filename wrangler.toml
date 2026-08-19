@@ -1,4 +1,4 @@
-name = "roof-claim-decoder"
+name = "roof-quote-decoder"
 main = "worker/index.js"
 compatibility_date = "2026-01-01"
 
